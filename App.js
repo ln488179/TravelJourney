@@ -9,11 +9,17 @@ import * as SplashScreen from 'expo-splash-screen';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import 'react-native-gesture-handler';
+import * as WebBrowser from 'expo-web-browser';
 SplashScreen.preventAutoHideAsync();
 setTimeout(SplashScreen.hideAsync, 2000);
 
 import greenCar from './assets/greenCar.png';
 import redCar from './assets/redCar.png';
+const waterUrl = 'https://www.chicago.gov/city/en/depts/dca/supp_info/city_gallery_in_thehistoricwatertower.html';
+
+function handleButtonPress (url) {
+  WebBrowser.openBrowserAsync(url);
+}
 
 function openDatabase() {
   if (Platform.OS === "web") {
@@ -26,38 +32,41 @@ function openDatabase() {
     };
   }
 
-  const db = SQLite.openDatabase("bmiDB.db");
+  const db = SQLite.openDatabase("travelDB.db");
   return db;
 }
 
 const db = openDatabase();
 
-function Items({ done: doneHeading, onPressItem }) {
+function Items() {
   const [items, setItems] = useState(null);
 
   useEffect(() => {
     db.transaction((tx) => {
       tx.executeSql(
-        `select id, done, bmi, weight, height, date(itemDate) as itemDate from items where done = ? order by itemDate desc;`,
-        [doneHeading ? 1 : 0],
+        `select id, travelDate, location, planActivities, actualActivities from items order by id desc;`,
+        [],
         (_, { rows: { _array } }) => setItems(_array)
       );
     });
   }, []);
-
-  const heading = "Travel History";
 
   if (items === null || items.length === 0) {
     return null;
   }
 
   return (
-    <View style={styles.sectionContainer}>
-      <Text style={styles.sectionHeading}>{heading}</Text>
-      {items.map(({ id, done, bmi, weight, height, itemDate }) => (
-        <Text key={id} style={styles.history}>{itemDate}:  {bmi} (W:{weight}, H:{height})</Text>
+    <ScrollView style={styles.sectionContainer}>
+      {items.map(({ id, travelDate, location, planActivities, actualActivities}) => (
+        <Text key={id} style={styles.history}>
+          {travelDate} - {location}{"\n"} 
+           * Plan: 
+            {"\n"}{planActivities}{"\n"} 
+           * Actual: 
+            {"\n"}{actualActivities}{"\n"} 
+        </Text>
       ))}
-    </View>
+    </ScrollView>
   );
 }
 
@@ -70,56 +79,19 @@ function Welcome() {
         Where do you want to go now?{"\n"}{"\n"}{"\n"}
       </Text> 
       <Image source={redCar} style={styles.imageRed} />
+      <Text>{"\n"}{"\n"}{"\n"}</Text>
+      <TouchableOpacity onPress={()=> handleButtonPress(waterUrl)}>
+        <Text style={styles.button}>Would love to visit next time</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
 function New({ navigation }) {
-  const [location, setLocation] = useState(0);
-  const [travelDate, setTravelDate] = useState(0);
-  const [planActivities, setPlanActivities] = useState(0);
-  const [actualActivities, setActualActivities] = useState(0);
-  const [afterVisited, setAfterVisited] = useState(0);
-
-  const [weight, setWeight] = useState(null);
-  const [height, setHeight] = useState(null);
-  const [bmi, setBmi] = useState(null);
-  const [forceUpdate, forceUpdateId] = useForceUpdate();
-
-  useEffect(() => {
-    db.transaction((tx) => {
-      //tx.executeSql(
-      //  "drop table items;"
-      //);
-      tx.executeSql(
-        "create table if not exists items (id integer primary key not null, done int, bmi text, weight text, height text, itemDate real);"
-      );
-    });
-  }, []);
-
-  const add = (weight, height, bmi) => {
-    // is weight empty?
-    if (weight === null || weight === "") {
-      return false;
-    }
-
-    // is weight empty?
-    if (height === null || height === "") {
-      return false;
-    }
-
-    bmi = ((weight / (height * height)) * 703).toFixed(1);
-
-    db.transaction(
-      (tx) => {
-        tx.executeSql("insert into items (done, bmi, weight, height, itemDate) values (0, ?, ?, ?, julianday('now'))", [bmi, weight, height]);
-        tx.executeSql("select * from items", [], (_, { rows }) =>
-          console.log(JSON.stringify(rows))
-        );
-      },
-      null
-    );
-  };
+  const [travelDate, setTravelDate] = useState(null);
+  const [location, setLocation] = useState(null);
+  const [planActivities, setPlanActivities] = useState(null);
+  const [actualActivities, setActualActivities] = useState(null);
 
   return (
     <SafeAreaView style={styles.container2}>
@@ -149,23 +121,20 @@ function New({ navigation }) {
               value={travelDate}
             />
             <TextInput
-              style={styles.input}
+              style={styles.input2}
               onChangeText={(planActivities) => setPlanActivities(planActivities)}
               placeholder="Plan Activities"
               value={planActivities}
+              multiline
             />
             <TextInput
-              style={styles.input}
+              style={styles.input2}
               onChangeText={(actualActivities) => setActualActivities(actualActivities)}
               placeholder="Actual Activities"
               value={actualActivities}
+              multiline
             />
-            <TextInput
-              style={styles.input}
-              onChangeText={(afterVisited) => setAfterVisited(afterVisited)}
-              placeholder="After Visited"
-              value={afterVisited}
-            />
+
             <TouchableOpacity 
               onPress={() => {
                 /* 1. Navigate to the 'History' route with params */
@@ -174,19 +143,14 @@ function New({ navigation }) {
                   location: location,
                   travelDate: travelDate,
                   planActivities: planActivities,
-                  actualActivities: actualActivities,
-                  afterVisited: afterVisited,
+                  actualActivities: actualActivities
                 });
               }}
             >
               <Text style={styles.button}>Save Journey</Text>
             </TouchableOpacity>
           </SafeAreaView>
-          <ScrollView style={styles.listArea}>
-            <Items
-              key={`forceupdate-todo-${forceUpdateId}`}
-            />
-          </ScrollView>
+
         </>
       )}
     </SafeAreaView>
@@ -194,24 +158,63 @@ function New({ navigation }) {
 }
 
 function History({route, navigation}) {
-  /* 2. Get the param */
-  const { location, travelDate, planActivities, actualActivities, afterVisited } = route.params;
+  const { location, travelDate, planActivities, actualActivities } = route.params;
+  const [forceUpdate, forceUpdateId] = useForceUpdate();
+
+  useEffect(() => {
+    db.transaction((tx) => {
+      //tx.executeSql(
+      //  "drop table items;"
+      //);
+      tx.executeSql(
+        "create table if not exists items (id integer primary key not null, travelDate real, location text, planActivities text, actualActivities text);"
+      );
+    });
+
+    add(travelDate, location, planActivities, actualActivities);
+
+  }, []);
+
+  const add = (travelDate, location, planActivities, actualActivities) => {
+    // is travelDate empty?
+    if (travelDate === null || travelDate === "") {
+      return false;
+    }
+
+    // is location empty?
+    if (location === null || location === "") {
+      return false;
+    }
+
+    // is planActivities empty?
+    if (planActivities === null || planActivities === "") {
+      return false;
+    }
+    
+    // is actualActivities empty?
+    if (actualActivities === null || actualActivities === "") {
+      return false;
+    }
+
+    db.transaction(
+      (tx) => {
+        tx.executeSql("insert into items (travelDate, location, planActivities, actualActivities) values (?, ?, ?, ?)", [travelDate, location, planActivities, actualActivities]);
+        tx.executeSql("select * from items", [], (_, { rows }) =>
+          console.log(JSON.stringify(rows))
+        );
+      },
+      null,
+      forceUpdate
+    );
+  };
 
   return (
-    <View style={styles.container3}>
-      <Text style={styles.history}>
-        Below are the past trips: {"\n"}
-        * {location} - {travelDate} {"\n"}
-        --- {planActivities} {"\n"}
-        --- {actualActivities} {"\n"}
-        --- {afterVisited} {"\n"}
-        * Chicago - 2000{"\n"}
-        * Denver - 2011{"\n"}
-        * Houston - 2020{"\n"}
-        * Rapid City - 2021{"\n"}{"\n"}{"\n"}
-      </Text> 
+    <SafeAreaView style={styles.container3}>
+      <ScrollView style={styles.listArea}>
+        <Items />
+      </ScrollView>
       <Image source={greenCar} style={styles.imageGreen} />
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -269,8 +272,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
     paddingTop: Constants.statusBarHeight,
-    justifyContent: 'center',
-    alignItems: 'center'
   },
   body: {
     flex: 1,
@@ -293,6 +294,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFCBA8',
     borderRadius: 3,
     height: 40,
+    padding: 10,
+    marginBottom: 10,
+    fontSize: 20,
+  },
+  input2: {
+    backgroundColor: '#FFCBA8',
+    borderRadius: 3,
+    height: 120,
     padding: 10,
     marginBottom: 10,
     fontSize: 20,
@@ -321,15 +330,15 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
   sectionContainer: {
-    marginBottom: 16,
-    marginHorizontal: 16,
+    marginBottom: 10,
+    marginHorizontal: 10,
   },
   sectionHeading: {
-    fontSize: 24,
-    marginBottom: 8,
+    fontSize: 20,
+    marginBottom: 5,
   },
   history: {
-    fontSize: 20,
+    fontSize: 15,
     marginBottom: 2,
   },
   imageRed: {
